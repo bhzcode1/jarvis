@@ -1,6 +1,7 @@
 from openai import OpenAI
 
 from config.settings import Settings
+from app.brain.offline_responder import generate_offline_response
 from app.memory.store import format_memory_context
 from app.utils.logger import get_logger
 
@@ -10,7 +11,7 @@ logger = get_logger(__name__)
 def generate_ai_response(user_text: str, settings: Settings) -> str:
     """Generate assistant response using OpenAI chat completions."""
     if not settings.openai_api_key:
-        return "OpenAI API key is missing. Please set OPENAI_API_KEY in your .env file."
+        return generate_offline_response(user_text=user_text, settings=settings)
 
     if not user_text.strip():
         return "Please say that again. I did not catch your request."
@@ -34,7 +35,7 @@ def generate_ai_response(user_text: str, settings: Settings) -> str:
         )
     except Exception as error:  # pragma: no cover - network/API runtime guard
         logger.exception("OpenAI request failed: %s", error)
-        return "I could not reach the AI service right now. Please try again."
+        return generate_offline_response(user_text=user_text, settings=settings)
 
     message = response.choices[0].message.content or ""
     return message.strip() or "I am sorry, I could not generate a response."

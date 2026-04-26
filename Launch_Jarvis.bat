@@ -38,12 +38,12 @@ echo  ============================================
 echo      JARVIS  ^|  Voice Assistant
 echo  ============================================
 echo.
-echo  Starting in AUTO mode...
+echo  Starting reactive voice UI mode...
 echo  (Close this window or press Ctrl+C to stop)
 echo.
 
-:: Launch Jarvis in auto mode
-python -m app.main
+:: Launch Jarvis with floating UI, wake detection, and command response
+python main.py
 
 :: If it exits, pause so you can read any error
 echo.

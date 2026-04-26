@@ -58,7 +58,7 @@ def _handle_web_search_command(text: str) -> CommandResult:
 def _handle_open_youtube_command(text: str) -> CommandResult:
     """Handle direct command to open YouTube."""
     lowered = text.lower()
-    if "open youtube" not in lowered:
+    if "youtube" not in lowered:
         return CommandResult(False, "")
 
     webbrowser.open("https://www.youtube.com")

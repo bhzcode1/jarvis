@@ -8,6 +8,7 @@ numpy
 pyttsx3
 faster-whisper
 pvporcupine
+vosk
 pytest
 pystray
 pillow

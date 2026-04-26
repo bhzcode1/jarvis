@@ -8,7 +8,7 @@ from app.utils.runtime import get_runtime_base_dir
 class Settings(BaseSettings):
     """Application configuration loaded from environment and defaults."""
 
-    assistant_name: str = "Jarvis"
+    assistant_name: str = "Gekko"
     openai_api_key: Optional[str] = None
     default_model: str = "gpt-4o-mini"
     ai_temperature: float = 0.4
@@ -20,15 +20,18 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_language: str = "en"
-    tts_rate: int = 180
+    tts_rate: int = 155
     tts_volume: float = 1.0
+    tts_voice_name: Optional[str] = None
     system_control_enabled: bool = False
     system_shutdown_delay_seconds: int = 30
     memory_enabled: bool = True
     memory_max_items: int = 200
     wake_word_enabled: bool = False
-    wake_word_phrase: str = "jarvis"
+    wake_word_phrase: str = "hey gekko"
     porcupine_access_key: Optional[str] = None
+    vosk_model_path: str = "data/models/vosk-model-small-en-us-0.15"
+    wake_word_backend: str = "vosk"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -73,7 +76,9 @@ def validate_runtime_settings(settings: Settings) -> List[str]:
     if settings.ai_max_tokens <= 0:
         warnings.append("AI_MAX_TOKENS must be greater than 0.")
     if settings.wake_word_enabled and not settings.porcupine_access_key:
-        warnings.append("Wake word is enabled but PORCUPINE_ACCESS_KEY is missing.")
+        warnings.append("Wake word is enabled but PORCUPINE_ACCESS_KEY is missing; Vosk/offline mode may be used.")
+    if settings.wake_word_backend not in {"auto", "porcupine", "vosk", "openai"}:
+        warnings.append("WAKE_WORD_BACKEND must be one of: auto, porcupine, vosk, openai.")
     if settings.system_control_enabled and settings.system_shutdown_delay_seconds < 5:
         warnings.append("SYSTEM_SHUTDOWN_DELAY_SECONDS should be at least 5 for safety.")
 
