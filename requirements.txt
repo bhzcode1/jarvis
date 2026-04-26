@@ -1,0 +1,14 @@
+openai
+python-dotenv
+pydantic
+pydantic-settings
+sounddevice
+soundfile
+numpy
+pyttsx3
+faster-whisper
+pvporcupine
+pytest
+pystray
+pillow
+pyinstaller

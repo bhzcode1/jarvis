@@ -1,0 +1,10 @@
+services:
+  jarvis:
+    build:
+      context: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    env_file:
+      - .env
+    command: ["python", "-m", "app.main", "--doctor"]

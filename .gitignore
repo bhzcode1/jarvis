@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# local artifacts / outputs (don't commit)
+build/
+dist/
+data/recordings/
+data/logs/
+*.wav
+*.exe
+*.log
