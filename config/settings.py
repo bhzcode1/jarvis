@@ -8,7 +8,7 @@ from app.utils.runtime import get_runtime_base_dir
 class Settings(BaseSettings):
     """Application configuration loaded from environment and defaults."""
 
-    assistant_name: str = "Gekko"
+    assistant_name: str = "Anti Gravity"
     openai_api_key: Optional[str] = None
     default_model: str = "gpt-4o-mini"
     ai_temperature: float = 0.4
@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     tts_rate: int = 155
     tts_volume: float = 1.0
     tts_voice_name: Optional[str] = None
+    command_wait_for_speech_seconds: float = 10.0
+    command_silence_timeout_seconds: float = 5.0
+    command_max_duration_seconds: float = 20.0
     system_control_enabled: bool = False
     system_shutdown_delay_seconds: int = 30
     memory_enabled: bool = True
@@ -32,6 +35,10 @@ class Settings(BaseSettings):
     porcupine_access_key: Optional[str] = None
     vosk_model_path: str = "data/models/vosk-model-small-en-us-0.15"
     wake_word_backend: str = "vosk"
+    spotify_client_id: Optional[str] = None
+    spotify_client_secret: Optional[str] = None
+    spotify_redirect_uri: str = "http://127.0.0.1:8888/callback"
+    spotify_device_name: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -69,6 +76,12 @@ def validate_runtime_settings(settings: Settings) -> List[str]:
         warnings.append("SAMPLE_RATE is very low; speech recognition quality may drop.")
     if settings.recording_duration_seconds <= 0:
         warnings.append("RECORDING_DURATION_SECONDS must be greater than 0.")
+    if settings.command_wait_for_speech_seconds <= 0:
+        warnings.append("COMMAND_WAIT_FOR_SPEECH_SECONDS must be greater than 0.")
+    if settings.command_silence_timeout_seconds <= 0:
+        warnings.append("COMMAND_SILENCE_TIMEOUT_SECONDS must be greater than 0.")
+    if settings.command_max_duration_seconds <= 0:
+        warnings.append("COMMAND_MAX_DURATION_SECONDS must be greater than 0.")
     if not 0.0 <= settings.tts_volume <= 1.0:
         warnings.append("TTS_VOLUME should be between 0.0 and 1.0.")
     if not 0.0 <= settings.ai_temperature <= 2.0:
@@ -79,6 +92,8 @@ def validate_runtime_settings(settings: Settings) -> List[str]:
         warnings.append("Wake word is enabled but PORCUPINE_ACCESS_KEY is missing; Vosk/offline mode may be used.")
     if settings.wake_word_backend not in {"auto", "porcupine", "vosk", "openai"}:
         warnings.append("WAKE_WORD_BACKEND must be one of: auto, porcupine, vosk, openai.")
+    if bool(settings.spotify_client_id) != bool(settings.spotify_client_secret):
+        warnings.append("Set both SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET for Spotify control.")
     if settings.system_control_enabled and settings.system_shutdown_delay_seconds < 5:
         warnings.append("SYSTEM_SHUTDOWN_DELAY_SECONDS should be at least 5 for safety.")
 

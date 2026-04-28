@@ -14,7 +14,7 @@ class FloatingAssistantWindow:
 
     def __init__(
         self,
-        title: str = "Gekko",
+        title: str = "Anti Gravity",
         width: int = 380,
         height: int = 220,
         on_close: Optional[Callable[[], None]] = None,
@@ -53,7 +53,7 @@ class FloatingAssistantWindow:
         card = ttk.Frame(container, style="Card.TFrame")
         card.pack(fill="both", expand=True)
 
-        ttk.Label(card, text="GEKKO", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(card, text="ANTI GRAVITY", style="Title.TLabel").pack(anchor="w")
         ttk.Label(card, textvariable=self._status_var, style="Status.TLabel").pack(anchor="w", pady=(8, 0))
         ttk.Label(card, textvariable=self._hint_var, style="Hint.TLabel").pack(anchor="w", pady=(8, 0))
 

@@ -13,3 +13,4 @@ pytest
 pystray
 pillow
 pyinstaller
+spotipy

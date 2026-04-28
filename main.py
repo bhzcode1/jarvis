@@ -24,6 +24,7 @@ from app.audio.speaker import speak_text
 from app.brain.assistant import generate_ai_response
 from app.commands.normalizer import normalize_voice_command
 from app.commands.router import route_command
+from app.commands.translation import build_translation_grammar_phrases
 from app.memory.extractor import detect_memory_action
 from app.memory.store import read_memory_fact, store_memory_fact
 from app.utils.env_bootstrap import ensure_env_file_exists
@@ -46,20 +47,59 @@ _COMMAND_GRAMMAR = [
     "open chrome",
     "open notepad",
     "open calculator",
+    "open spotify",
+    "play on spotify",
+    "play music on spotify",
+    "spotify play",
+    "pause spotify",
+    "resume spotify",
+    "next song",
+    "previous song",
+    "what's playing",
+    "save this song",
+    "like this song",
+    "shuffle on",
+    "shuffle off",
+    "repeat this song",
+    "repeat off",
+    "queue song",
+    "create playlist",
+    "open edge",
     "what time is it",
     "what is the time",
     "what is the date",
     "what day is it",
-    "help",
+    "who are you",
+    "what is your name",
     "what can you do",
+    "what can you open",
+    "help",
     "hello",
+    "hey",
+    "what's up",
+    "you there",
     "how are you",
+    "how was your day",
+    "what's your mood",
+    "talk to me",
+    "can we just talk",
+    "just chat with me",
+    "i'm bored",
+    "i'm stressed",
+    "i had a bad day",
+    "what do you think about",
+    "do you ever get bored",
     "thank you",
+    "translate hello to hindi",
+    "translate hello to spanish",
+    "translate thank you to french",
+    "translate good morning to german",
+    "how do you say hello in hindi",
     "search",
     "google",
     "find",
     "[unk]",
-]
+] + build_translation_grammar_phrases()
 
 
 def _pick_input_device() -> int | None:
@@ -90,7 +130,7 @@ def _hint_text(text: str, max_length: int = 54) -> str:
 
 
 def _notify_wake(settings: Settings) -> None:
-    """Play a quick wake beep so user knows Gekko heard them."""
+    """Play a quick wake beep so user knows Anti Gravity heard them."""
     if winsound is not None:
         try:
             winsound.MessageBeep(winsound.MB_ICONASTERISK)
@@ -105,7 +145,7 @@ def _process_command_transcript(transcript: str, settings: Settings) -> str:
         print(f"Normalized command: {normalized_transcript}")
 
     if not normalized_transcript:
-        return "I could not detect clear speech. Please try again."
+        return "I didn't catch that. Please repeat your command."
 
     memory_action = detect_memory_action(normalized_transcript)
     if settings.memory_enabled and memory_action.action == "save":
@@ -174,9 +214,9 @@ def _listen_for_command_with_vosk(
     best_text = ""
     recent_levels: list[float] = []
 
-    wait_for_speech_seconds = 8.0
-    max_command_seconds = 12.0
-    silence_after_speech_seconds = 1.4
+    wait_for_speech_seconds = float(settings.command_wait_for_speech_seconds)
+    max_command_seconds = float(settings.command_max_duration_seconds)
+    silence_after_speech_seconds = float(settings.command_silence_timeout_seconds)
     min_command_seconds = 0.9
     min_voice_rms = 0.00045
 
@@ -241,14 +281,14 @@ def _record_command_samples(
     window: FloatingAssistantWindow,
     stop_event: threading.Event,
     sample_rate: int,
-    seconds: float,
+    settings: Settings,
 ) -> np.ndarray:
     """Collect command audio and stop early after the user finishes speaking."""
-    max_samples = int(sample_rate * seconds)
+    max_samples = int(sample_rate * float(settings.command_max_duration_seconds))
     min_samples = int(sample_rate * 0.8)
     voice_threshold = 0.0008
-    silence_after_speech_seconds = 0.9
-    max_wait_for_speech_seconds = 4.0
+    silence_after_speech_seconds = float(settings.command_silence_timeout_seconds)
+    max_wait_for_speech_seconds = float(settings.command_wait_for_speech_seconds)
     chunks: list[np.ndarray] = []
     collected = 0
     started_at = time.monotonic()
@@ -259,7 +299,7 @@ def _record_command_samples(
         now = time.monotonic()
         frame = stream.read_frame(timeout=0.3)
         if frame is None:
-            if now - started_at > seconds + 2.0:
+            if now - started_at > float(settings.command_max_duration_seconds) + 2.0:
                 break
             continue
 
@@ -300,7 +340,7 @@ def _transcribe_command(samples: np.ndarray, settings: Settings) -> str:
     wav_bytes = io.BytesIO()
     sf.write(wav_bytes, samples, settings.sample_rate, format="WAV")
     wav_bytes.seek(0)
-    wav_bytes.name = "gekko_command.wav"
+    wav_bytes.name = "anti_gravity_command.wav"
 
     client = OpenAI(api_key=settings.openai_api_key)
     try:
@@ -365,7 +405,7 @@ def _run_command_turn(
             window=window,
             stop_event=stop_event,
             sample_rate=settings.sample_rate,
-            seconds=float(settings.recording_duration_seconds),
+            settings=settings,
         )
         if stop_event.is_set():
             return
@@ -428,7 +468,7 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
             if not result.detected:
                 break
 
-            window.set_status("Awake", "Gekko heard you")
+            window.set_status("Awake", f"{settings.assistant_name} heard you")
             print("Wake phrase detected.")
             print(f"Matched transcript: {result.transcript}")
             _notify_wake(settings=settings)
@@ -455,7 +495,7 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
 
 
 def main() -> None:
-    """Run Gekko with a floating reactive UI and background wake detection."""
+    """Run Anti Gravity with a floating reactive UI and background wake detection."""
     set_cwd_to_runtime_base_dir()
     ensure_env_file_exists(runtime_base_dir=get_runtime_base_dir())
 
@@ -465,7 +505,7 @@ def main() -> None:
         target=_assistant_worker,
         args=(window, stop_event),
         daemon=True,
-        name="gekko-assistant-worker",
+        name="anti-gravity-assistant-worker",
     )
     worker.start()
 

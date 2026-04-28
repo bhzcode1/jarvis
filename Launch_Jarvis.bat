@@ -1,9 +1,9 @@
 @echo off
-title Jarvis Voice Assistant
+title Anti Gravity Voice Assistant
 color 0A
 
 :: -------------------------------------------------------
-:: JARVIS LAUNCHER
+:: ANTI GRAVITY LAUNCHER
 :: Place this file in the ROOT of your Jarvis project folder
 :: (same folder that contains app\ and .env)
 :: -------------------------------------------------------
@@ -35,17 +35,17 @@ call .venv\Scripts\activate.bat
 
 echo.
 echo  ============================================
-echo      JARVIS  ^|  Voice Assistant
+echo      ANTI GRAVITY  ^|  Voice Assistant
 echo  ============================================
 echo.
 echo  Starting reactive voice UI mode...
 echo  (Close this window or press Ctrl+C to stop)
 echo.
 
-:: Launch Jarvis with floating UI, wake detection, and command response
+:: Launch Anti Gravity with floating UI, wake detection, and command response
 python main.py
 
 :: If it exits, pause so you can read any error
 echo.
-echo  Jarvis has stopped. Press any key to close.
+echo  Anti Gravity has stopped. Press any key to close.
 pause
