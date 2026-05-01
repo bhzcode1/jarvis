@@ -14,3 +14,9 @@ pystray
 pillow
 pyinstaller
 spotipy
+groq
+elevenlabs
+selenium
+webdriver-manager
+pygame
+asyncio-contextmanager

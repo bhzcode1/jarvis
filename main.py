@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import sounddevice as sd
@@ -39,8 +40,34 @@ from wakeword.simple_keyword_detector import (
     is_openai_quota_error,
 )
 
+# Anti Gravity Speed Optimizations
+try:
+    from app.anti_gravity_core import AntiGravity
+    from app.instant_commands import is_instant_command, execute_instant_command, needs_browser
+    ANTI_GRAVITY_ENABLED = True
+except ImportError:
+    ANTI_GRAVITY_ENABLED = False
+    print("⚠ Anti Gravity optimizations not available")
+
 
 _VOSK_MODEL_CACHE: dict[str, object] = {}
+
+# Anti Gravity global instance
+_ANTI_GRAVITY = None
+
+
+def _get_anti_gravity() -> Optional[AntiGravity]:
+    """Get or create the Anti Gravity instance."""
+    global _ANTI_GRAVITY
+    if not ANTI_GRAVITY_ENABLED:
+        return None
+    if _ANTI_GRAVITY is None:
+        try:
+            _ANTI_GRAVITY = AntiGravity()
+        except Exception as e:
+            print(f"⚠ Failed to initialize Anti Gravity: {e}")
+            return None
+    return _ANTI_GRAVITY
 
 _COMMAND_GRAMMAR = [
     "open youtube",
@@ -167,6 +194,32 @@ def _process_command_transcript(transcript: str, settings: Settings) -> str:
 
     if not normalized_transcript:
         return "I didn't catch that. Please repeat your command."
+
+    # ─────────────────────────────────────────────────────────
+    # ANTI GRAVITY FAST-PATH (< 1.5 seconds for most commands)
+    # ─────────────────────────────────────────────────────────
+    
+    ag = _get_anti_gravity()
+    if ag is not None:
+        # Try instant command bypass (instant execution, no LLM)
+        if is_instant_command(normalized_transcript):
+            success, response = execute_instant_command(normalized_transcript)
+            if success:
+                print(f"⚡ Instant command executed: {response}")
+                return f"{response} command executed."
+        
+        # Try browser automation (fast Gecko + Groq LLM)
+        if needs_browser(normalized_transcript):
+            print("🌐 Routing to browser automation...")
+            try:
+                result = ag.handle_browser_command(normalized_transcript)
+                return result if result else "Browser command completed."
+            except Exception as e:
+                print(f"Browser command error: {e}")
+    
+    # ─────────────────────────────────────────────────────────
+    # EXISTING MEMORY & ROUTING (compatibility)
+    # ─────────────────────────────────────────────────────────
 
     memory_action = detect_memory_action(normalized_transcript)
     if settings.memory_enabled and memory_action.action == "save":
@@ -575,6 +628,11 @@ def main() -> None:
     finally:
         stop_event.set()
         worker.join(timeout=2.0)
+        
+        # Cleanup Anti Gravity resources
+        ag = _get_anti_gravity()
+        if ag is not None:
+            ag.shutdown()
 
 
 if __name__ == "__main__":
