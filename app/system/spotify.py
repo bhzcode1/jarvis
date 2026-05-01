@@ -90,10 +90,12 @@ def _normalize_name(text: str) -> str:
     return "".join(char for char in text.lower() if char.isalnum())
 
 
-def _open_spotify_if_needed() -> None:
+def _open_spotify_if_needed() -> bool:
     """Launch Spotify desktop app and give it a moment to register a device."""
-    if open_application("spotify"):
+    launched = open_application("spotify")
+    if launched:
         time.sleep(2.0)
+    return launched
 
 
 def _pick_device(client, settings: Settings):
@@ -140,12 +142,12 @@ def _pick_device(client, settings: Settings):
 
 
 def _ensure_playback_device(client, settings: Settings):
-    """Return an active playback device when possible."""
+    """Return an active playback device and whether Spotify was launched."""
     playback = client.current_playback()
     if playback and playback.get("device") and not playback["device"].get("is_restricted"):
-        return playback["device"]
+        return playback["device"], False
 
-    _open_spotify_if_needed()
+    launched = _open_spotify_if_needed()
     device = _pick_device(client, settings)
     if device is None:
         raise RuntimeError("No Spotify device is ready.")
@@ -154,7 +156,7 @@ def _ensure_playback_device(client, settings: Settings):
     if device_id:
         client.transfer_playback(device_id=device_id, force_play=False)
         time.sleep(0.8)
-    return device
+    return device, launched
 
 
 def _spotify_error_message(error: Exception) -> str:
@@ -193,7 +195,7 @@ def spotify_play(settings: Settings, query: str, item_type: SpotifyItemType) -> 
     """Search Spotify and begin playback of a track, artist, album, or playlist."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, launched = _ensure_playback_device(client, settings)
         device_id = device.get("id") if isinstance(device, dict) else None
         item = _search_first(client, query, item_type)
         if item is None:
@@ -202,10 +204,12 @@ def spotify_play(settings: Settings, query: str, item_type: SpotifyItemType) -> 
         if item_type == "track":
             artists = ", ".join(artist["name"] for artist in item.get("artists", [])[:2])
             client.start_playback(device_id=device_id, uris=[item["uri"]])
-            return SpotifyActionResult(True, f"Playing {item['name']} by {artists}.")
+            prefix = "Opening Spotify now. " if launched else ""
+            return SpotifyActionResult(True, f"{prefix}Playing {item['name']} by {artists}.")
 
         client.start_playback(device_id=device_id, context_uri=item["uri"])
-        return SpotifyActionResult(True, f"Playing {item['name']}.")
+        prefix = "Opening Spotify now. " if launched else ""
+        return SpotifyActionResult(True, f"{prefix}Playing {item['name']}.")
     except Exception as error:  # pragma: no cover - runtime/network/device guard
         return SpotifyActionResult(False, _spotify_error_message(error))
 
@@ -214,7 +218,7 @@ def spotify_pause(settings: Settings) -> SpotifyActionResult:
     """Pause current Spotify playback."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         client.pause_playback(device_id=device.get("id") if isinstance(device, dict) else None)
         return SpotifyActionResult(True, "Paused.")
     except Exception as error:  # pragma: no cover
@@ -225,9 +229,9 @@ def spotify_resume(settings: Settings) -> SpotifyActionResult:
     """Resume current Spotify playback."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, launched = _ensure_playback_device(client, settings)
         client.start_playback(device_id=device.get("id") if isinstance(device, dict) else None)
-        return SpotifyActionResult(True, "Resumed.")
+        return SpotifyActionResult(True, "Opening Spotify now. Resumed." if launched else "Resumed.")
     except Exception as error:  # pragma: no cover
         return SpotifyActionResult(False, _spotify_error_message(error))
 
@@ -236,7 +240,7 @@ def spotify_skip(settings: Settings) -> SpotifyActionResult:
     """Skip to the next Spotify track."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         client.next_track(device_id=device.get("id") if isinstance(device, dict) else None)
         return SpotifyActionResult(True, "Skipping.")
     except Exception as error:  # pragma: no cover
@@ -247,9 +251,9 @@ def spotify_previous(settings: Settings) -> SpotifyActionResult:
     """Go back to the previous Spotify track."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         client.previous_track(device_id=device.get("id") if isinstance(device, dict) else None)
-        return SpotifyActionResult(True, "Going back.")
+        return SpotifyActionResult(True, "Previous track.")
     except Exception as error:  # pragma: no cover
         return SpotifyActionResult(False, _spotify_error_message(error))
 
@@ -259,11 +263,11 @@ def spotify_set_volume(settings: Settings, level: int) -> SpotifyActionResult:
     clamped_level = max(0, min(level, 100))
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         if isinstance(device, dict) and not device.get("supports_volume", True):
             return SpotifyActionResult(False, "This Spotify device has fixed volume.")
         client.volume(volume_percent=clamped_level, device_id=device.get("id") if isinstance(device, dict) else None)
-        return SpotifyActionResult(True, f"Spotify volume {clamped_level}.")
+        return SpotifyActionResult(True, f"Volume {clamped_level}.")
     except Exception as error:  # pragma: no cover
         return SpotifyActionResult(False, _spotify_error_message(error))
 
@@ -272,7 +276,7 @@ def spotify_adjust_volume(settings: Settings, delta: int) -> SpotifyActionResult
     """Raise or lower Spotify volume relative to current playback state."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         current_level = 50
         if isinstance(device, dict) and device.get("volume_percent") is not None:
             current_level = int(device["volume_percent"])
@@ -285,7 +289,7 @@ def spotify_shuffle(settings: Settings, enabled: bool) -> SpotifyActionResult:
     """Turn Spotify shuffle mode on or off."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         client.shuffle(state=enabled, device_id=device.get("id") if isinstance(device, dict) else None)
         return SpotifyActionResult(True, "Shuffle on." if enabled else "Shuffle off.")
     except Exception as error:  # pragma: no cover
@@ -296,10 +300,10 @@ def spotify_repeat(settings: Settings, state: SpotifyRepeatState) -> SpotifyActi
     """Set Spotify repeat mode."""
     try:
         client = _get_client(settings)
-        device = _ensure_playback_device(client, settings)
+        device, _ = _ensure_playback_device(client, settings)
         client.repeat(state=state, device_id=device.get("id") if isinstance(device, dict) else None)
         if state == "track":
-            return SpotifyActionResult(True, "Repeating this track.")
+            return SpotifyActionResult(True, "Repeating this song.")
         if state == "context":
             return SpotifyActionResult(True, "Repeat on.")
         return SpotifyActionResult(True, "Repeat off.")
@@ -316,7 +320,7 @@ def spotify_queue(settings: Settings, query: str) -> SpotifyActionResult:
         if item is None:
             return SpotifyActionResult(False, "I couldn't find that track.")
         client.add_to_queue(item["uri"])
-        return SpotifyActionResult(True, "Queued.")
+        return SpotifyActionResult(True, "Queued. It'll play next.")
     except Exception as error:  # pragma: no cover
         return SpotifyActionResult(False, _spotify_error_message(error))
 

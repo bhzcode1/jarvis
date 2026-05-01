@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import soundfile as sf
@@ -55,6 +55,7 @@ class SimpleKeywordDetector:
     def __init__(
         self,
         keyword: str = "hey gekko",
+        keywords: Sequence[str] | None = None,
         access_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
         sample_rate: int = 16000,
@@ -66,9 +67,29 @@ class SimpleKeywordDetector:
         vosk_model_path: Optional[str] = None,
         level_callback: Optional[Callable[[float], None]] = None,
     ) -> None:
-        self.keyword = keyword.lower().strip()
+        provided_keywords = list(keywords or [])
+        if not provided_keywords:
+            provided_keywords = [keyword]
+
+        cleaned_keywords = []
+        for phrase in provided_keywords:
+            clean = str(phrase).strip().lower()
+            if clean:
+                cleaned_keywords.append(clean)
+        if not cleaned_keywords:
+            cleaned_keywords = [keyword.lower().strip() or "hey gekko"]
+
+        self.keywords = tuple(dict.fromkeys(cleaned_keywords))
+        self.keyword = self.keywords[0]
         self.keyword_tokens = tuple(part for part in self.keyword.split() if part)
-        self.keyword_aliases = self._build_keyword_aliases(self.keyword)
+
+        alias_set: set[str] = set()
+        for phrase in self.keywords:
+            alias_set.update(self._build_keyword_aliases(phrase))
+        self.keyword_aliases = tuple(sorted(alias_set, key=len, reverse=True))
+
+        # Very short wake tokens need stricter matching (to avoid false positives).
+        self._short_token_aliases = {alias for alias in self.keyword_aliases if len(alias) <= 3}
         self.access_key = (access_key or "").strip()
         self.backend = backend.lower().strip()
         self.vosk_model_path = Path(vosk_model_path or "data/models/vosk-model-small-en-us-0.15")
@@ -85,9 +106,11 @@ class SimpleKeywordDetector:
     def _build_keyword_aliases(self, keyword: str) -> tuple[str, ...]:
         """Return wake phrase variants that sound the same in speech recognition."""
         aliases = {keyword}
-        final_token = keyword.split()[-1] if keyword.split() else keyword
-        if final_token:
-            aliases.add(final_token)
+        tokens = tuple(part for part in keyword.split() if part)
+        # Only add single-token shortcuts when the wake phrase itself is a single word,
+        # or when we know it's a safe alias (e.g. gekko/gecko).
+        if len(tokens) == 1:
+            aliases.add(tokens[0])
         if "gekko" in keyword or "gecko" in keyword:
             aliases.update(("hey gekko", "gekko", "hey gecko", "gecko"))
         return tuple(sorted(aliases, key=len, reverse=True))
@@ -129,8 +152,14 @@ class SimpleKeywordDetector:
         normalized = transcript.strip().lower()
         if not normalized:
             return False
+        normalized_tokens = tuple(part for part in normalized.split() if part)
         for alias in self.keyword_aliases:
-            if alias in normalized:
+            if alias in self._short_token_aliases:
+                # Match standalone token only (e.g., "ag").
+                if alias in normalized_tokens:
+                    return True
+                continue
+            if alias and alias in normalized:
                 return True
         return False
 
@@ -168,7 +197,8 @@ class SimpleKeywordDetector:
         last_debug_print = 0.0
         last_heard_text = ""
 
-        print(f"Using offline Vosk wake detection. Say: '{self.keyword}'")
+        pretty_keywords = " / ".join(self.keywords[:4])
+        print(f"Using offline Vosk wake detection. Say: '{pretty_keywords}'")
         while stop_event is None or not stop_event.is_set():
             frame: Optional[AudioFrame] = stream.read_frame(timeout=0.5)
             now = time.time()

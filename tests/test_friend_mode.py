@@ -22,3 +22,8 @@ def test_friend_response_for_bad_day() -> None:
 def test_friend_response_for_how_are_you() -> None:
     response = generate_friend_response("how are you", assistant_name="Anti Gravity")
     assert "you good" in response.lower() or "pretty calm" in response.lower()
+
+
+def test_friend_response_for_song_on_repeat() -> None:
+    response = generate_friend_response("i've been listening to this song on repeat", assistant_name="Anti Gravity")
+    assert "what song" in response.lower()

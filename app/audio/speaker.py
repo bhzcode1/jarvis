@@ -45,7 +45,7 @@ def _speak_with_windows_sapi(text: str, settings: Settings) -> None:
     escaped_text = xml_utils.escape(text)
     ssml = f"""
 <speak version="1.0" xml:lang="en-US">
-  <prosody rate="-5%" volume="x-loud">{escaped_text}</prosody>
+  <prosody rate="0%" volume="default">{escaped_text}</prosody>
 </speak>
 """
     encoded_ssml = base64.b64encode(ssml.encode("utf-8")).decode("ascii")
@@ -77,6 +77,50 @@ $speaker.SpeakSsml($ssml)
         creationflags=creation_flags,
         timeout=45,
     )
+
+
+def list_windows_voices(settings: Settings | None = None) -> list[str]:
+    """Return installed Windows SAPI voice names (best-effort)."""
+    if platform.system().lower() != "windows":
+        return []
+
+    preferred_voice = (settings.tts_voice_name if settings else "") or ""
+    encoded_preferred = base64.b64encode(preferred_voice.encode("utf-8")).decode("ascii")
+    script = f"""
+Add-Type -AssemblyName System.Speech
+$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$preferredBytes = [Convert]::FromBase64String('{encoded_preferred}')
+$preferredVoice = [System.Text.Encoding]::UTF8.GetString($preferredBytes)
+$voices = @($speaker.GetInstalledVoices() | ForEach-Object {{ $_.VoiceInfo.Name }})
+if ($preferredVoice.Trim().Length -gt 0) {{
+    Write-Output ("Preferred filter: " + $preferredVoice)
+}}
+$voices | Sort-Object | ForEach-Object {{ Write-Output $_ }}
+"""
+    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded_script,
+            ],
+            check=False,
+            creationflags=creation_flags,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception:
+        return []
+
+    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    return [line for line in lines if not line.lower().startswith("preferred filter:")]
 
 
 def _speak_with_pyttsx3(text: str, settings: Settings) -> None:

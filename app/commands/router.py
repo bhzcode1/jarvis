@@ -29,6 +29,7 @@ from app.system.spotify import (
     spotify_skip,
 )
 from config.settings import Settings
+from app.personality import short_confirm
 
 
 
@@ -69,7 +70,7 @@ def _handle_web_search_command(text: str) -> CommandResult:
 
     encoded_query = query.replace(" ", "+")
     webbrowser.open(f"https://www.google.com/search?q={encoded_query}")
-    return CommandResult(True, f"Searching the web for {query}.")
+    return CommandResult(True, short_confirm())
 
 
 def _handle_open_youtube_command(text: str) -> CommandResult:
@@ -79,7 +80,7 @@ def _handle_open_youtube_command(text: str) -> CommandResult:
         return CommandResult(False, "")
 
     webbrowser.open("https://www.youtube.com")
-    return CommandResult(True, "Opening YouTube.")
+    return CommandResult(True, short_confirm())
 
 
 def _extract_queue_query(text: str) -> str:
@@ -139,6 +140,9 @@ def _spotify_playlist_shortcuts(text: str) -> tuple[str, str] | None:
         "play tamil songs": ("tamil hits playlist", "playlist"),
         "play hindi songs": ("hindi top hits playlist", "playlist"),
         "play telugu songs": ("telugu hits playlist", "playlist"),
+        "play something in tamil": ("tamil hits playlist", "playlist"),
+        "play something in hindi": ("hindi top hits playlist", "playlist"),
+        "play something in telugu": ("telugu hits playlist", "playlist"),
     }
     return exact_map.get(lowered)
 
@@ -165,6 +169,7 @@ def _extract_spotify_play_request(text: str) -> tuple[str, str] | None:
         (r"^play (?:the )?playlist (?P<query>.+)$", "playlist"),
         (r"^play (?P<query>.+?) playlist$", "playlist"),
         (r"^play (?:the )?top hits of (?P<query>.+)$", "playlist"),
+        (r"^play something in (?P<query>tamil|hindi|telugu|malayalam|punjabi|bengali)$", "playlist"),
         (r"^play (?P<query>.+?) on spotify$", "track"),
         (r"^play (?P<query>.+?) in spotify$", "track"),
         (r"^spotify play (?P<query>.+)$", "track"),
@@ -183,6 +188,8 @@ def _extract_spotify_play_request(text: str) -> tuple[str, str] | None:
             return None
         if "top hits of" in pattern:
             return (f"{query} top hits", "playlist")
+        if "play something in" in pattern:
+            return (f"{query} hits playlist", "playlist")
         return query, item_type
     return None
 
@@ -283,7 +290,7 @@ def _handle_open_app_command(text: str) -> CommandResult:
         return CommandResult(False, "")
 
     if open_application(app_name):
-        return CommandResult(True, f"Opening {app_name}.")
+        return CommandResult(True, short_confirm())
     return CommandResult(False, "")
 
 

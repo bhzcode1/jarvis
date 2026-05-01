@@ -48,6 +48,40 @@ def test_route_spotify_play_command(monkeypatch) -> None:
     assert "playing believer as track" in result.response_text.lower()
 
 
+def test_route_spotify_language_playlist_request(monkeypatch) -> None:
+    monkeypatch.setattr(
+        router,
+        "spotify_play",
+        lambda settings, query, item_type: type(
+            "SpotifyResult",
+            (),
+            {"success": True, "message": f"Playing {query} as {item_type}."},
+        )(),
+    )
+
+    result = route_command("play something in telugu", settings=_test_settings())
+    assert result.handled is True
+    assert "telugu hits playlist" in result.response_text.lower()
+    assert "playlist" in result.response_text.lower()
+
+
+def test_route_spotify_top_hits_request(monkeypatch) -> None:
+    monkeypatch.setattr(
+        router,
+        "spotify_play",
+        lambda settings, query, item_type: type(
+            "SpotifyResult",
+            (),
+            {"success": True, "message": f"Playing {query} as {item_type}."},
+        )(),
+    )
+
+    result = route_command("play the top hits of ar rahman", settings=_test_settings())
+    assert result.handled is True
+    assert "ar rahman top hits" in result.response_text.lower()
+    assert "playlist" in result.response_text.lower()
+
+
 def test_route_spotify_pause_command(monkeypatch) -> None:
     monkeypatch.setattr(
         router,

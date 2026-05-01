@@ -119,6 +119,15 @@ def generate_friend_response(user_text: str, assistant_name: str) -> str:
     if "favorite thing to do" in text or "favourite thing to do" in text:
         return "Probably talking like this, honestly. No pressure, no performance. What about you?"
 
+    if "on repeat" in text and "song" in text:
+        return "Oh that's a vibe honestly. What song is it?"
+
+    if "need something to listen to" in text:
+        return "What mood are you in? I can match it."
+
+    if "this song is so good" in text:
+        return "Good pick for this time of night. What song is it?"
+
     if "music" in text or "listening to" in text:
         return "Music changes the whole mood, honestly. What are you listening to right now?"
 

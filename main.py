@@ -27,6 +27,7 @@ from app.commands.router import route_command
 from app.commands.translation import build_translation_grammar_phrases
 from app.memory.extractor import detect_memory_action
 from app.memory.store import read_memory_fact, store_memory_fact
+from app.personality import pick_wake_acknowledgement, short_confirm
 from app.utils.env_bootstrap import ensure_env_file_exists
 from app.utils.runtime import get_runtime_base_dir, set_cwd_to_runtime_base_dir
 from config.settings import Settings
@@ -138,6 +139,26 @@ def _notify_wake(settings: Settings) -> None:
             pass
 
 
+def _wake_phrases(settings: Settings) -> list[str]:
+    phrases_text = (getattr(settings, "wake_word_phrases", "") or "").strip()
+    if phrases_text:
+        phrases = [part.strip().lower() for part in phrases_text.split(",") if part.strip()]
+        if phrases:
+            return phrases
+    return [settings.wake_word_phrase.strip().lower()] if settings.wake_word_phrase else ["anti gravity"]
+
+
+def _is_wake_echo(transcript: str, phrases: list[str]) -> bool:
+    normalized = " ".join((transcript or "").lower().split()).strip()
+    if not normalized:
+        return False
+    if normalized in {"hey google", "ok google", "hey siri"}:
+        return True
+    if normalized in {"ag", "hey ag"}:
+        return True
+    return any(normalized == phrase for phrase in phrases)
+
+
 def _process_command_transcript(transcript: str, settings: Settings) -> str:
     """Resolve transcript into memory, local command, or AI response."""
     normalized_transcript = normalize_voice_command(transcript)
@@ -212,6 +233,7 @@ def _listen_for_command_with_vosk(
     last_voice_at = started_at
     last_partial_text = ""
     best_text = ""
+    got_final = False
     recent_levels: list[float] = []
 
     wait_for_speech_seconds = float(settings.command_wait_for_speech_seconds)
@@ -252,17 +274,25 @@ def _listen_for_command_with_vosk(
             final_text = _parse_vosk_payload(recognizer.Result())
             if final_text:
                 best_text = final_text
+                got_final = True
                 print(f"[command] final: {final_text}")
                 window.set_status("Listening", _hint_text(final_text))
         else:
             partial_text = _parse_vosk_payload(recognizer.PartialResult())
-            if partial_text and partial_text != last_partial_text:
+            # Once we have a final result, ignore any later partials (they are
+            # often background noise or a second phrase that should not replace
+            # the user's intended command).
+            if not got_final and partial_text and partial_text != last_partial_text:
                 best_text = partial_text
                 last_partial_text = partial_text
                 print(f"[command] partial: {partial_text}")
                 window.set_status("Listening", _hint_text(partial_text))
 
         heard_enough = now - started_at >= min_command_seconds
+        # If Vosk produced a final phrase and we heard enough audio, stop early
+        # to avoid the final command being overwritten by later stray speech.
+        if got_final and heard_enough:
+            break
         user_stopped = speech_started and now - last_voice_at >= silence_after_speech_seconds
         no_speech = not speech_started and now - started_at >= wait_for_speech_seconds
         too_long = now - started_at >= max_command_seconds
@@ -389,33 +419,48 @@ def _run_command_turn(
 ) -> None:
     """Listen for one post-wake command, answer it, then return to wake mode."""
     stream.clear_buffer()
-    window.set_status("Listening", "Speak your command now")
+    window.set_state("listening", "Go ahead.")
+    window.set_status("Listening", "Go ahead.")
     print("Listening for command...")
 
-    if settings.wake_word_backend == "vosk":
-        transcript = _listen_for_command_with_vosk(
-            stream=stream,
-            settings=settings,
-            window=window,
-            stop_event=stop_event,
-        )
-    else:
-        samples = _record_command_samples(
-            stream=stream,
-            window=window,
-            stop_event=stop_event,
-            sample_rate=settings.sample_rate,
-            settings=settings,
-        )
+    phrases = _wake_phrases(settings=settings)
+    transcript = ""
+    for _attempt in range(3):
+        if settings.wake_word_backend == "vosk":
+            transcript = _listen_for_command_with_vosk(
+                stream=stream,
+                settings=settings,
+                window=window,
+                stop_event=stop_event,
+            )
+        else:
+            samples = _record_command_samples(
+                stream=stream,
+                window=window,
+                stop_event=stop_event,
+                sample_rate=settings.sample_rate,
+                settings=settings,
+            )
+            if stop_event.is_set():
+                return
+            transcript = _transcribe_command(samples=samples, settings=settings)
+
         if stop_event.is_set():
             return
-        transcript = _transcribe_command(samples=samples, settings=settings)
+        if not transcript.strip():
+            break
+        if _is_wake_echo(transcript, phrases=phrases):
+            # Ignore wake-word echoes and keep listening briefly.
+            stream.clear_buffer()
+            continue
+        break
 
     if stop_event.is_set():
         return
 
     window.set_audio_level(0.0)
-    window.set_status("Thinking", "Understanding your command")
+    window.set_state("processing", "One sec.")
+    window.set_status("Thinking", "One sec.")
     print(f"Command transcript: {transcript or '[No speech detected]'}")
 
     window.set_status("Thinking", _hint_text(transcript or "No clear speech detected"))
@@ -424,6 +469,7 @@ def _run_command_turn(
 
     if stop_event.is_set():
         return
+    window.set_state("speaking", _hint_text(response_text))
     window.set_status("Speaking", _hint_text(response_text))
     try:
         speak_text(text=response_text, settings=settings)
@@ -434,6 +480,7 @@ def _run_command_turn(
 def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Event) -> None:
     """Run microphone, wake detection, command processing, and speech in background."""
     settings = Settings()
+    phrases = _wake_phrases(settings=settings)
     selected_device = _pick_input_device()
     stream = MicrophoneStream(
         sample_rate=settings.sample_rate,
@@ -442,7 +489,8 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
         input_device=selected_device,
     )
     detector = SimpleKeywordDetector(
-        keyword=settings.wake_word_phrase,
+        keyword=phrases[0],
+        keywords=phrases,
         access_key=settings.porcupine_access_key,
         openai_api_key=settings.openai_api_key,
         sample_rate=settings.sample_rate,
@@ -457,9 +505,10 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
 
     print("Starting microphone stream...")
     print(f"Input device index: {selected_device if selected_device is not None else 'default'}")
-    print(f"Say '{settings.wake_word_phrase}' to trigger detection.")
+    print(f"Say one of: {', '.join(phrases)}")
     print("Listening...")
-    window.set_status("Listening", f"Say '{settings.wake_word_phrase}'")
+    window.set_state("idle", "Listening in background")
+    window.set_status("Listening", "Listening in background")
 
     try:
         stream.start()
@@ -468,10 +517,17 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
             if not result.detected:
                 break
 
-            window.set_status("Awake", f"{settings.assistant_name} heard you")
+            window.set_state("wake", f"{settings.assistant_name} heard you")
+            window.set_status("Listening", "")
             print("Wake phrase detected.")
             print(f"Matched transcript: {result.transcript}")
             _notify_wake(settings=settings)
+            ack = pick_wake_acknowledgement(silent_ratio=getattr(settings, "wake_ack_silent_ratio", 0.6))
+            if ack:
+                try:
+                    speak_text(text=ack, settings=settings)
+                except Exception:
+                    pass
             time.sleep(0.25)
             _run_command_turn(
                 stream=stream,
@@ -480,14 +536,17 @@ def _assistant_worker(window: FloatingAssistantWindow, stop_event: threading.Eve
                 stop_event=stop_event,
             )
             if not stop_event.is_set():
-                window.set_status("Listening", f"Say '{settings.wake_word_phrase}'")
+                window.set_state("idle", "Listening in background")
+                window.set_status("Listening", "Listening in background")
     except WakeDetectionUnavailableError as error:
         print("Wake-word provider unavailable.")
         print(f"Reason: {error}")
-        window.set_status("Quota needed", "Add OpenAI billing or use Porcupine key")
+        window.set_state("error", "Wake-word unavailable")
+        window.set_status("Setup problem", "Wake-word unavailable")
     except Exception as error:
         print("Wake-word runtime failed.")
         print(f"Reason: {error}")
+        window.set_state("error", "Runtime failed")
         window.set_status("Setup problem", _hint_text(str(error)))
     finally:
         window.set_audio_level(0.0)

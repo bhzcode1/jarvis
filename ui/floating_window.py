@@ -29,6 +29,8 @@ class FloatingAssistantWindow:
         self._display_level = 0.0
         self._phase = 0.0
         self._is_closed = False
+        self._state = "idle"
+        self._error_flash_until = 0.0
 
         self.root = tk.Tk()
         self.root.title(title)
@@ -70,6 +72,13 @@ class FloatingAssistantWindow:
         self.root.after(40, self._poll_events)
         self.root.after(16, self._animate)
 
+    def set_state(self, state: str, hint: str | None = None) -> None:
+        """Request a state update (idle/wake/listening/processing/speaking/error/friend/spotify)."""
+        if self._is_ui_thread():
+            self._apply_state(state, hint)
+            return
+        self._events.put(("state", (state, hint)))
+
     def set_status(self, status: str, hint: str | None = None) -> None:
         """Request a visible status update from any thread."""
         if self._is_ui_thread():
@@ -94,6 +103,26 @@ class FloatingAssistantWindow:
             self._hint_var.set(hint)
         self.root.update_idletasks()
 
+    def _apply_state(self, state: str, hint: str | None = None) -> None:
+        clean_state = (state or "").strip().lower() or "idle"
+        if clean_state == "error":
+            self._error_flash_until = time.monotonic() + 0.65
+        self._state = clean_state
+        display = {
+            "idle": "Idle",
+            "wake": "Listening",
+            "listening": "Listening",
+            "processing": "Thinking",
+            "speaking": "Speaking",
+            "error": "Error",
+            "friend": "Chilling",
+            "spotify": "Music",
+        }.get(clean_state, clean_state.title())
+        self._status_var.set(display)
+        if hint is not None:
+            self._hint_var.set(hint)
+        self.root.update_idletasks()
+
     def _poll_events(self) -> None:
         """Apply queued worker-thread events on the Tkinter thread."""
         if self._is_closed:
@@ -106,7 +135,29 @@ class FloatingAssistantWindow:
             if event_name == "status":
                 status, hint = args
                 self._apply_status(str(status), None if hint is None else str(hint))
+            if event_name == "state":
+                state, hint = args
+                self._apply_state(str(state), None if hint is None else str(hint))
         self.root.after(40, self._poll_events)
+
+    def _state_palette(self) -> tuple[str, str]:
+        now = time.monotonic()
+        if now < self._error_flash_until:
+            return ("#ef4444", "#fecaca")
+        state = self._state
+        if state == "wake":
+            return ("#38bdf8", "#a7f3d0")
+        if state == "processing":
+            return ("#8b5cf6", "#38bdf8")
+        if state == "speaking":
+            return ("#fbbf24", "#fde68a")
+        if state == "friend":
+            return ("#22c55e", "#bbf7d0")
+        if state == "spotify":
+            return ("#10b981", "#60a5fa")
+        if state == "listening":
+            return ("#38bdf8", "#a7f3d0")
+        return ("#38bdf8", "#a7f3d0")
 
     def _animate(self) -> None:
         """Draw one waveform animation frame and schedule the next frame."""
@@ -123,6 +174,19 @@ class FloatingAssistantWindow:
         canvas_height = int(self.canvas.winfo_height() or 84)
         center_y = canvas_height / 2
         amplitude = 8.0 + (self._display_level * 46.0)
+        primary, secondary = self._state_palette()
+        pulse = (math.sin(self._phase * 0.6) + 1.0) / 2.0
+        border_width = 2 + int(pulse * 3) if self._state == "wake" else 2
+
+        if self._state != "idle":
+            self.canvas.create_rectangle(
+                2,
+                2,
+                canvas_width - 2,
+                canvas_height - 2,
+                outline=primary,
+                width=border_width,
+            )
         points = []
 
         point_count = 56
@@ -134,8 +198,8 @@ class FloatingAssistantWindow:
             y = center_y + ((wave_a * 0.72) + (wave_b * 0.28)) * amplitude * envelope
             points.extend((x, y))
 
-        self.canvas.create_line(points, fill="#38bdf8", width=3, smooth=True, capstyle=tk.ROUND)
-        self.canvas.create_line(points, fill="#a7f3d0", width=1, smooth=True, capstyle=tk.ROUND)
+        self.canvas.create_line(points, fill=primary, width=3, smooth=True, capstyle=tk.ROUND)
+        self.canvas.create_line(points, fill=secondary, width=1, smooth=True, capstyle=tk.ROUND)
 
         dot_radius = 3 + self._display_level * 5
         self.canvas.create_oval(
@@ -143,7 +207,7 @@ class FloatingAssistantWindow:
             center_y - dot_radius,
             8 + dot_radius * 2,
             center_y + dot_radius,
-            fill="#fb7185",
+            fill=secondary,
             outline="",
         )
 

@@ -24,17 +24,22 @@ class Settings(BaseSettings):
     tts_volume: float = 1.0
     tts_voice_name: Optional[str] = None
     command_wait_for_speech_seconds: float = 10.0
-    command_silence_timeout_seconds: float = 5.0
+    command_silence_timeout_seconds: float = 2.0
     command_max_duration_seconds: float = 20.0
     system_control_enabled: bool = False
     system_shutdown_delay_seconds: int = 30
     memory_enabled: bool = True
     memory_max_items: int = 200
     wake_word_enabled: bool = False
-    wake_word_phrase: str = "hey gekko"
+    # Single wake phrase (legacy). Prefer WAKE_WORD_PHRASES.
+    wake_word_phrase: str = "anti gravity"
+    # Comma-separated wake phrases. Example: "anti gravity,hey anti gravity,ag,hey ag"
+    wake_word_phrases: str = "anti gravity,hey anti gravity,ag,hey ag"
     porcupine_access_key: Optional[str] = None
     vosk_model_path: str = "data/models/vosk-model-small-en-us-0.15"
     wake_word_backend: str = "vosk"
+    deactivate_silence_seconds: float = 8.0
+    wake_ack_silent_ratio: float = 0.6
     spotify_client_id: Optional[str] = None
     spotify_client_secret: Optional[str] = None
     spotify_redirect_uri: str = "http://127.0.0.1:8888/callback"

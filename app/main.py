@@ -2,6 +2,7 @@ import argparse
 
 from app.audio.recorder import record_microphone_audio
 from app.audio.speaker import speak_text
+from app.audio.speaker import list_windows_voices
 from app.audio.transcriber import transcribe_audio_file
 from app.audio.wake_word import wait_for_wake_word, wake_word_ready
 from app.brain.assistant import generate_ai_response
@@ -71,7 +72,9 @@ def run_wake_word_loop(settings: Settings) -> None:
     print("Wake-word mode enabled. Press Ctrl+C to stop.")
     try:
         while True:
-            detected = wait_for_wake_word(settings=settings)
+            # If the user explicitly selected wake mode, don't silently exit just
+            # because WAKE_WORD_ENABLED is false; run anyway and explain.
+            detected = wait_for_wake_word(settings=settings, force=True)
             if detected:
                 run_single_turn(settings=settings)
             else:
@@ -94,6 +97,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run startup diagnostics and exit.",
     )
+    parser.add_argument(
+        "--list-voices",
+        action="store_true",
+        help="List installed Windows TTS voices and exit.",
+    )
     return parser
 
 
@@ -113,6 +121,18 @@ def main() -> None:
     if args.doctor:
         for check in run_doctor_checks(settings=settings):
             print(check)
+        return
+    if args.list_voices:
+        voices = list_windows_voices(settings=settings)
+        if not voices:
+            print("No Windows voices found (or not running on Windows).")
+        else:
+            print("Installed Windows voices:")
+            for voice in voices:
+                print(f"- {voice}")
+            print()
+            print("To pick one, set in .env:")
+            print('  TTS_VOICE_NAME="Microsoft Zira Desktop"')
         return
 
     if args.mode == "once":
